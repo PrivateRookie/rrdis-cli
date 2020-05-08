@@ -20,6 +20,33 @@ impl std::str::FromStr for ExistOP {
     }
 }
 
+#[derive(Debug, Clone)]
+struct CmdBuilder {
+    args: Vec<String>,
+}
+
+impl CmdBuilder {
+    fn new() -> Self {
+        CmdBuilder { args: vec![] }
+    }
+    fn arg(mut self, arg: &str) -> Self {
+        self.args.push(format!("${}", arg.len()));
+        self.args.push(arg.to_string());
+        self
+    }
+    fn add_arg(&mut self, arg: &str) {
+        self.args.push(format!("${}", arg.len()));
+        self.args.push(arg.to_string());
+    }
+    fn to_bytes(&self) -> BytesMut {
+        let mut bytes = BytesMut::new();
+        bytes.put(&format!("*{}\r\n", self.args.len() / 2).into_bytes()[..]);
+        bytes.put(&self.args.join("\r\n").into_bytes()[..]);
+        bytes.put(&b"\r\n"[..]);
+        bytes
+    }
+}
+
 #[derive(Debug, Clone, StructOpt)]
 pub enum Commands {
     /// set a key with string value
@@ -69,8 +96,7 @@ pub enum Commands {
 
 impl Commands {
     pub fn to_bytes(&self) -> bytes::BytesMut {
-        let mut command = BytesMut::with_capacity(1024);
-        match self {
+        let cmd = match self {
             Commands::Set {
                 key,
                 value,
@@ -78,79 +104,40 @@ impl Commands {
                 px,
                 x,
             } => {
-                let mut count = 3u8;
-                if ex.is_some() {
-                    count += 1
+                let mut builder = CmdBuilder::new().arg("SET").arg(key).arg(value);
+
+                if let Some(ex) = ex {
+                    builder.add_arg("EX");
+                    builder.add_arg(&ex.to_string());
                 }
-                if px.is_some() {
-                    count += 1
-                }
-                if x.is_some() {
-                    count += 1
+                if let Some(px) = ex {
+                    builder.add_arg("PX");
+                    builder.add_arg(&px.to_string());
                 }
 
-                let mut args = vec![
-                    format!("*{}", count),
-                    "$3".to_string(),
-                    "SET".to_string(),
-                    format!("${}", key.len()),
-                    key.clone(),
-                    format!("${}", value.len()),
-                    value.clone(),
-                ];
-                if let Some(ex) = ex {
-                    args.push("$2".to_string());
-                    args.push("EX".to_string());
-                    args.push(format!("${}", ex.to_string().len()));
-                    args.push(ex.to_string())
-                }
-                if let Some(px) = px {
-                    args.push("$2".to_string());
-                    args.push("EX".to_string());
-                    args.push(format!("${}", px.to_string().len()));
-                    args.push(px.to_string())
-                }
                 if let Some(x) = x {
                     match x {
                         ExistOP::NX => {
-                            args.push("$2".to_string());
-                            args.push("NX".to_string())
+                            builder.add_arg("NX");
                         }
                         ExistOP::XX => {
-                            args.push("$2".to_string());
-                            args.push("XX".to_string())
+                            builder.add_arg("XX");
                         }
                     }
                 }
-                command.put(&args.join("\r\n").to_string().into_bytes()[..]);
-                command.put(&b"\r\n"[..]);
+                builder.to_bytes()
             }
-            Commands::Get { key } => {
-                command.put(
-                    &format!("*2\r\n$3\r\nGET\r\n${}\r\n{}\r\n", key.len(), key).into_bytes()[..],
-                );
-            }
-            Commands::Incr { key } => command.put(
-                &format!("*2\r\n$4\r\nINCR\r\n${}\r\n{}\r\n", key.len(), key).into_bytes()[..],
-            ),
-            Commands::Lrange { key, start, stop } => {
-                let args = vec![
-                    "*4".to_string(),
-                    "$6".to_string(),
-                    "LRANGE".to_string(),
-                    format!("${}", key.len()),
-                    key.clone(),
-                    format!("${}", start.to_string().len()),
-                    format!("{}", start),
-                    format!("${}", stop.to_string().len()),
-                    format!("{}", stop),
-                ];
-                command.put(&args.join("\r\n").to_string().into_bytes()[..]);
-                command.put(&b"\r\n"[..]);
-            }
-            Commands::Ping => command.put(&b"*1\r\n$4\r\nPING\r\n"[..]),
-        }
-        log::debug!("{:?}", command);
-        command
+            Commands::Get { key } => CmdBuilder::new().arg("GET").arg(key).to_bytes(),
+            Commands::Incr { key } => CmdBuilder::new().arg("INCR").arg(key).to_bytes(),
+            Commands::Lrange { key, start, stop } => CmdBuilder::new()
+                .arg("LRANGE")
+                .arg(key)
+                .arg(&start.to_string())
+                .arg(&stop.to_string())
+                .to_bytes(),
+            Commands::Ping => CmdBuilder::new().arg("PING").to_bytes(),
+        };
+        log::debug!("{:?}", cmd);
+        cmd
     }
 }
