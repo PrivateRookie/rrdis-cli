@@ -1,5 +1,4 @@
 use bytes::{BufMut, BytesMut};
-use log::{info};
 use std::error::Error;
 use structopt::StructOpt;
 use tokio::net::TcpStream;
@@ -11,6 +10,7 @@ mod reply;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
+
     let mut stream = TcpStream::connect("127.0.0.1:6379").await?;
     let mut buf = [0u8; 1024];
     let mut resp = BytesMut::with_capacity(1024);
@@ -21,6 +21,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let n = reader.read(&mut buf).await?;
     resp.put(&buf[0..n]);
     let reply = reply::Reply::from_resp(&resp);
-    info!("{:?}", reply);
+    println!("{}", reply);
     Ok(())
 }
