@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::bytes::complete::{take_while1, take_while_m_n};
+use nom::bytes::complete::{take_while, take_while1, take_while_m_n};
 use nom::combinator::map;
 use nom::multi::many_m_n;
 use nom::sequence::delimited;
@@ -25,28 +25,26 @@ impl Display for Reply {
             Reply::Err(err) => write!(f, "- {}", err),
             Reply::Int(int) => write!(f, ": {}", int),
             Reply::Batch(reply) => {
-                if reply.is_some() {
-                    write!(f, "$ {}", reply.as_ref().unwrap())
+                if let Some(reply) = reply {
+                    write!(f, "$ {}", reply)
                 } else {
                     write!(f, "$-1")
                 }
             }
             Reply::MultiBatch(replies) => {
-                if replies.is_none() {
-                    write!(f, "*-1")
-                } else {
+                if let Some(replies) = replies {
                     write!(
                         f,
-                        "*{} {}",
-                        replies.as_ref().unwrap().len(),
+                        "* {}\r\n{}",
+                        replies.len(),
                         replies
-                            .as_ref()
-                            .unwrap()
                             .iter()
                             .map(|r| format!("{}", r))
                             .collect::<Vec<String>>()
-                            .join(", ")
+                            .join("\r\n")
                     )
+                } else {
+                    write!(f, "*-1")
                 }
             }
             Reply::BadReply(err) => write!(f, "parse reply failed: {}", err),
@@ -73,7 +71,7 @@ impl Reply {
 fn parse_single_line(i: &str) -> IResult<&str, Reply> {
     let (i, resp) = delimited(
         tag("+"),
-        take_while1(|c| c != '\r' && c != '\n'),
+        take_while(|c| c != '\r' && c != '\n'),
         tag("\r\n"),
     )(i)?;
     Ok((i, Reply::SingleLine(String::from(resp))))

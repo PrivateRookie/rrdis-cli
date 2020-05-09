@@ -90,6 +90,14 @@ pub enum Commands {
         /// stop position
         stop: i64,
     },
+    /// push value to list
+    Rpush {
+        /// redis key
+        key: String,
+
+        /// value
+        values: Vec<String>,
+    },
     /// test server status
     Ping,
 }
@@ -110,7 +118,7 @@ impl Commands {
                     builder.add_arg("EX");
                     builder.add_arg(&ex.to_string());
                 }
-                if let Some(px) = ex {
+                if let Some(px) = px {
                     builder.add_arg("PX");
                     builder.add_arg(&px.to_string());
                 }
@@ -135,6 +143,11 @@ impl Commands {
                 .arg(&start.to_string())
                 .arg(&stop.to_string())
                 .to_bytes(),
+            Commands::Rpush { key, values } => {
+                let mut builder = CmdBuilder::new().arg("RPUSH").arg(key);
+                values.iter().for_each(|v| builder.add_arg(v));
+                builder.to_bytes()
+            }
             Commands::Ping => CmdBuilder::new().arg("PING").to_bytes(),
         };
         log::debug!("{:?}", cmd);
